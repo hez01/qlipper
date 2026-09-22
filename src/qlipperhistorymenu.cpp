@@ -44,23 +44,16 @@ namespace
     const int ModelRowRole = Qt::UserRole + 1;
     const int IsImageRole = Qt::UserRole + 2;
 
-    // Width needed to show `displaySize` characters at the configured font size,
-    // plus the (largest, i.e. image) icon column and the scrollbar.
-    int computeContentWidth(const QWidget *widget)
+    const int kTextIcon = 20; // small icon column for text/url entries
+
+    // Pixel width one row needs: icon column + the actual (already
+    // display-size-truncated) text + padding + scrollbar. Used both to size a
+    // row and, taken over all rows, to size the menu to just the longest entry.
+    int rowPixelWidth(const QString &text, const QFont &font, int iconSz, const QStyle *st)
     {
-        const int chars = QlipperPreferences::Instance()->displaySize();
-        const int pt = QlipperPreferences::Instance()->menuFontPointSize();
-        QFont f = widget ? widget->font() : QFont();
-        if (pt > 0)
-            f.setPointSize(pt);
-        f.setBold(true); // the current entry is bold, i.e. the widest case
-        const QFontMetrics fm(f);
-        const int avg = qMax(1, fm.averageCharWidth());
-        const int textW = avg * (chars + 2);
-        const int iconW = QlipperPreferences::Instance()->menuIconSize();
-        const QStyle *st = widget ? widget->style() : QApplication::style();
-        const int scrollbar = st->pixelMetric(QStyle::PM_ScrollBarExtent);
-        return iconW + 8 /*gap*/ + textW + 16 /*padding*/ + scrollbar + 4;
+        const int textW = QFontMetrics(font).horizontalAdvance(text);
+        const int scrollbar = st ? st->pixelMetric(QStyle::PM_ScrollBarExtent) : 16;
+        return iconSz + 8 /*gap*/ + textW + 20 /*padding*/ + scrollbar;
     }
 
     // Draws each history row with a per-entry height: short for text, tall for
@@ -73,7 +66,12 @@ namespace
 
         QSize sizeHint(const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
         {
-            return QSize(computeContentWidth(opt.widget), rowHeight(opt, idx));
+            QFont f = idx.data(Qt::FontRole).value<QFont>();
+            if (f.resolveMask() == 0)
+                f = opt.font;
+            const QStyle *st = opt.widget ? opt.widget->style() : QApplication::style();
+            const int w = rowPixelWidth(idx.data(Qt::DisplayRole).toString(), f, iconSizeFor(idx), st);
+            return QSize(w, rowHeight(opt, idx));
         }
 
         void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
@@ -127,7 +125,6 @@ namespace
         static constexpr int kHPad = 6;
         static constexpr int kGap = 8;
         static constexpr int kVPad = 4;
-        static constexpr int kTextIcon = 20; // small icon for text/url entries
 
         static int iconSizeFor(const QModelIndex &idx)
         {
@@ -266,7 +263,18 @@ void QlipperHistoryMenu::selectFirst()
 
 int QlipperHistoryMenu::contentWidth() const
 {
-    return computeContentWidth(m_list);
+    const int imgIcon = QlipperPreferences::Instance()->menuIconSize();
+    const QStyle *st = m_list->style();
+    int maxW = 0;
+    for (int r = 0; r < m_list->count(); ++r)
+    {
+        const QListWidgetItem *it = m_list->item(r);
+        const int iconSz = it->data(IsImageRole).toBool() ? imgIcon : kTextIcon;
+        maxW = qMax(maxW, rowPixelWidth(it->text(), it->font(), iconSz, st));
+    }
+    // The display text is already truncated to the display-size limit, so this
+    // never exceeds that limit; when entries are shorter, the menu is narrower.
+    return qMax(160, maxW);
 }
 
 void QlipperHistoryMenu::applyHeightLimit()
