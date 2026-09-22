@@ -4,7 +4,7 @@ Lightweight, cross-platform clipboard history applet that lives in the system
 tray and lets you pick a previous entry from a searchable, live-filtered menu.
 
 This is a fork of [pvanek/qlipper](https://github.com/pvanek/qlipper) with added
-features and Ubuntu 24.04 build support. All upstream credit belongs to
+features. All upstream credit belongs to
 Petr Vanek and the original contributors.
 
 ## What this fork adds
@@ -14,15 +14,13 @@ Petr Vanek and the original contributors.
   are stored once.
 - **SQLite-backed storage.** History is stored in SQLite, so each insert, move-to-top,
   trim, and per-entry delete is a single targeted statement instead of rewriting the
-  whole history on every change.
+  whole history on every change. No more hanging when there's a lot of large entries.
 - **Unlimited-history option** and **per-entry deletion** with the Delete key.
 - **Larger thumbnails and a scrollable history menu.** Entries render at a larger
-  icon size, and a long history scrolls instead of overflowing off-screen.
-- **Builds on Ubuntu 24.04.** KF6 `KSystemClipboard` is now optional: when the
-  KF6 GuiAddons framework is not present (as on stock Ubuntu 24.04) the build falls
-  back to `QClipboard`. Debian packaging is included.
+  icon size, and a long history scrolls.
+- **Search.** Includes search for quickly finding items in your unlimited history.
 
-## Building on Ubuntu 24.04
+## Building (tried on Ubuntu 24.04)
 
 Install the build dependencies:
 
@@ -48,15 +46,9 @@ make
 sudo make install
 ```
 
-If the KF6 GuiAddons framework is installed, the build uses `KSystemClipboard`
-for full clipboard monitoring under Wayland; otherwise it falls back to
-`QClipboard`, which on Wayland only sees the clipboard while Qlipper has focus.
-Clipboard monitoring works fully on X11 in both cases.
-
 ## Platforms
 
-Linux, BSD, Windows, and macOS. The Ubuntu 24.04 notes above are specific to this
-fork's packaging; see upstream for other platforms.
+Only tested on Lubuntu 24.04, Xorg, but should work on other platforms (check original qlipper).
 
 ## Credits and license
 
