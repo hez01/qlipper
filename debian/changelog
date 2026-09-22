@@ -1,3 +1,11 @@
+qlipper (1:6.1.0-5) unstable; urgency=medium
+
+  * "Items shown in menu" now controls how many entries are visible before
+    the menu scrolls, rather than hiding the rest: all entries stay in the
+    menu and the overflow is reachable by scrolling.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 17:08:58 +0000
+
 qlipper (1:6.1.0-4) unstable; urgency=medium
 
   * The history menu now anchors its top-left corner at the mouse cursor

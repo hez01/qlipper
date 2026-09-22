@@ -36,6 +36,10 @@ class QlipperHistoryMenu : public QMenu
 public:
     explicit QlipperHistoryMenu(QlipperModel *model, QWidget *parent = nullptr);
 
+    // Cap the menu's height to the configured number of visible entries; the
+    // rest scroll. Call after popup() when the menu is laid out.
+    void applyHeightLimit();
+
 signals:
     void triggered(const QModelIndex &index) const;
 

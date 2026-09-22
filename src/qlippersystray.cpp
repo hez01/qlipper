@@ -96,6 +96,10 @@ void QlipperSystray::shortcut_activated()
     {
         const QPoint pos = QCursor::pos();
         m_shortcutMenu->popup(pos);
+        // Cap the height to the configured number of visible entries now that
+        // the menu is laid out, before the final move, so the resize doesn't
+        // reposition it afterwards.
+        m_shortcutMenu->applyHeightLimit();
         // popup() flips the menu upwards when it would run off the bottom of
         // the screen, which leaves the cursor at the menu's bottom edge. Force
         // the top-left corner to the cursor instead, so the menu always opens

@@ -257,7 +257,7 @@
           <item row="2" column="1">
            <widget class="QSpinBox" name="visibleCountSpinBox">
             <property name="toolTip">
-             <string>How many entries the menu shows at once. Search always scans the whole history. 0 = show all.</string>
+             <string>How many entries are visible before the menu scrolls. All entries stay reachable by scrolling, and search scans the whole history. 0 = no limit.</string>
             </property>
             <property name="alignment">
              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>

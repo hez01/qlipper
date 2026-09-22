@@ -108,13 +108,12 @@ void QlipperHistoryMenu::rebuild()
 
     const QString filter = m_search->text();
     const bool filtering = !filter.isEmpty();
-    // When not filtering, cap the menu at the first N entries (0 = show all).
-    // Filtering always scans the whole history (SearchRole is the full,
-    // untruncated content), so a match below the cap is still found and shown.
-    const int visible = QlipperPreferences::Instance()->visibleCount();
 
+    // All matching entries are added; the "Items shown" preference limits how
+    // many are *visible* before the menu scrolls (see applyHeightLimit()), not
+    // how many exist in the menu. Filtering scans the whole history via the
+    // full, untruncated SearchRole.
     const int rows = m_model->rowCount(QModelIndex());
-    int shown = 0;
     for (int i = 0; i < rows; ++i)
     {
         const QModelIndex idx = m_model->index(i, 0);
@@ -124,10 +123,6 @@ void QlipperHistoryMenu::rebuild()
             const QString haystack = idx.data(QlipperModel::SearchRole).toString();
             if (!haystack.contains(filter, Qt::CaseInsensitive))
                 continue;
-        }
-        else if (visible > 0 && shown >= visible)
-        {
-            break;
         }
 
         const QString text = idx.data(Qt::DisplayRole).toString();
@@ -140,7 +135,6 @@ void QlipperHistoryMenu::rebuild()
 
         addAction(action);
         m_itemActions.append(action);
-        ++shown;
     }
 
     if (m_itemActions.isEmpty())
@@ -161,6 +155,41 @@ void QlipperHistoryMenu::selectFirst()
 {
     if (!m_itemActions.isEmpty() && m_itemActions.first()->isEnabled())
         setActiveAction(m_itemActions.first());
+}
+
+void QlipperHistoryMenu::applyHeightLimit()
+{
+    const int visible = QlipperPreferences::Instance()->visibleCount();
+    if (visible <= 0)
+    {
+        // No limit: let the menu grow (QMenu still scrolls if it exceeds the
+        // screen height).
+        setMaximumHeight(QWIDGETSIZE_MAX);
+        return;
+    }
+    if (m_itemActions.isEmpty())
+        return;
+
+    // Row height of a real entry (valid only once the menu has been laid out).
+    const int itemH = actionGeometry(m_itemActions.first()).height();
+    if (itemH <= 0)
+        return;
+
+    // Height of the non-entry rows (search box + separator) that are always on
+    // top of the list.
+    int chrome = 0;
+    const QList<QAction *> acts = actions();
+    for (QAction *a : acts)
+        if (!m_itemActions.contains(a))
+            chrome += actionGeometry(a).height();
+
+    const QMargins m = contentsMargins();
+    const int frame = m.top() + m.bottom() + 4;
+
+    // Cap the menu so only `visible` entries fit; the rest are reachable by
+    // scrolling (SH_Menu_Scrollable is enabled in the menu's proxy style).
+    // This is only a ceiling: with fewer entries the menu stays smaller.
+    setMaximumHeight(chrome + visible * itemH + frame);
 }
 
 void QlipperHistoryMenu::onAboutToShow()
