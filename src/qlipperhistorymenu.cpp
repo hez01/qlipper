@@ -96,6 +96,10 @@ void QlipperHistoryMenu::rebuild()
     const QString filter = m_search->text();
     const bool filtering = !filter.isEmpty();
 
+    // Deterministic item size, so row heights never depend on when Qt lazily
+    // computes them (which made entries appear to grow on the first keystroke).
+    const QSize hint(contentWidth(), itemRowHeight());
+
     // Every matching entry is added; the "Items shown" preference limits how
     // many are *visible* before the list scrolls (see applyHeightLimit()), not
     // how many exist. Filtering scans the whole history via the full,
@@ -118,6 +122,7 @@ void QlipperHistoryMenu::rebuild()
         item->setFont(qvariant_cast<QFont>(idx.data(Qt::FontRole)));
         item->setToolTip(idx.data(Qt::ToolTipRole).toString());
         item->setData(ModelRowRole, i);
+        item->setSizeHint(hint);
         m_list->addItem(item);
     }
 
@@ -125,6 +130,7 @@ void QlipperHistoryMenu::rebuild()
     {
         QListWidgetItem *empty = new QListWidgetItem(tr("No matches"));
         empty->setFlags(Qt::NoItemFlags);
+        empty->setSizeHint(hint);
         m_list->addItem(empty);
     }
 
@@ -146,15 +152,20 @@ void QlipperHistoryMenu::selectFirst()
     }
 }
 
+int QlipperHistoryMenu::itemRowHeight() const
+{
+    const int pt = QlipperPreferences::Instance()->menuFontPointSize();
+    QFont f = m_list->font();
+    if (pt > 0)
+        f.setPointSize(pt);
+    const QFontMetrics fm(f);
+    const int iconSize = QlipperPreferences::Instance()->menuIconSize();
+    return qMax(iconSize, fm.height()) + 6;
+}
+
 int QlipperHistoryMenu::rowPixelHeight() const
 {
-    if (m_list->count() > 0)
-    {
-        const int h = m_list->sizeHintForRow(0);
-        if (h > 0)
-            return h;
-    }
-    return QlipperPreferences::Instance()->menuIconSize() + 6;
+    return itemRowHeight();
 }
 
 int QlipperHistoryMenu::contentWidth() const

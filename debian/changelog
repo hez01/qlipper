@@ -1,3 +1,11 @@
+qlipper (1:6.1.0-9) unstable; urgency=medium
+
+  * Fix history entries sometimes growing taller on the first keystroke of
+    a search: row sizes are now computed deterministically instead of
+    depending on Qt's lazy item-size caching.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 17:45:05 +0000
+
 qlipper (1:6.1.0-8) unstable; urgency=medium
 
   * The highlighted history entry now follows the mouse cursor (hover to

@@ -70,6 +70,7 @@ private:
     void activateCurrent();
     void removeCurrent();
     int rowPixelHeight() const;
+    int itemRowHeight() const;
     int contentWidth() const;
 };
 
