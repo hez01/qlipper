@@ -26,18 +26,23 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 class QlipperModel;
 class QLineEdit;
+class QListWidget;
+class QListWidgetItem;
 
-// A QMenu that renders QlipperModel's rows as actions, with a QLineEdit at
-// the top that live-filters the list by display text. Emits triggered(QModelIndex)
-// with the same signature QMenuView used, so callers don't need to change.
+// A QMenu shell hosting a search box and a QListWidget that renders
+// QlipperModel's rows. The list is used (instead of plain menu actions) so the
+// history scrolls inside a fixed-height viewport with a normal scrollbar,
+// rather than QMenu's own scroll which repositions the whole popup. Emits
+// triggered(QModelIndex) so callers don't need to change.
 class QlipperHistoryMenu : public QMenu
 {
     Q_OBJECT
 public:
     explicit QlipperHistoryMenu(QlipperModel *model, QWidget *parent = nullptr);
 
-    // Cap the menu's height to the configured number of visible entries; the
-    // rest scroll. Call after popup() when the menu is laid out.
+    // Size the list viewport to the configured number of visible entries; the
+    // rest are reachable via the scrollbar. Call after popup() when the widget
+    // has been laid out (row heights are only known then).
     void applyHeightLimit();
 
 signals:
@@ -49,17 +54,20 @@ protected:
 private slots:
     void rebuild();
     void onAboutToShow();
-    void onMenuTriggered(QAction *action);
 
 private:
     QAbstractItemModel *m_model;
     QLineEdit *m_search;
-    QList<QAction *> m_itemActions;
+    QListWidget *m_list;
+    // Height of everything above the list (search box + separator + menu
+    // frame), measured once when first shown; -1 until then.
+    int m_chrome = -1;
 
-    void activateIndex(const QModelIndex &index);
     void selectFirst();
-    void highlightStep(int direction);
-    void removeHighlighted();
+    void moveCurrent(int direction);
+    void activateCurrent();
+    void removeCurrent();
+    int rowPixelHeight() const;
 };
 
 #endif // QLIPPERHISTORYMENU_H

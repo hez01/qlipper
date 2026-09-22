@@ -1,3 +1,11 @@
+qlipper (1:6.1.0-6) unstable; urgency=medium
+
+  * The history list is now a scroll area: scrolling moves the entries
+    within a fixed viewport instead of repositioning the whole menu to the
+    top of the screen. The menu also resizes to fit after filtering.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 17:23:01 +0000
+
 qlipper (1:6.1.0-5) unstable; urgency=medium
 
   * "Items shown in menu" now controls how many entries are visible before

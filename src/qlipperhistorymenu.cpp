@@ -18,11 +18,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <QLineEdit>
+#include <QListWidget>
 #include <QWidgetAction>
 #include <QKeyEvent>
 #include <QTimer>
-#include <QProxyStyle>
-#include <QStyle>
+#include <QScreen>
+#include <QGuiApplication>
 
 #include "qlippermodel.h"
 #include "qlipperhistorymenu.h"
@@ -32,50 +33,19 @@ Q_DECLARE_METATYPE(QModelIndex)
 
 namespace
 {
-    // Proxy style applied only to the history menu. It does two things:
-    //  * enlarges item icons (PM_SmallIconSize) so image thumbnails are big
-    //    enough to actually recognise, and
-    //  * enables menu scrolling (SH_Menu_Scrollable) so a long history scrolls
-    //    with the wheel / scroll indicators instead of growing off-screen.
-    // Scoped to this menu via QWidget::setStyle, so it never affects the rest
-    // of the application (child widgets keep the application style).
-    class HistoryMenuStyle : public QProxyStyle
-    {
-    public:
-        int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr,
-                        const QWidget *widget = nullptr) const override
-        {
-            // Read live so the size setting takes effect the next time the menu
-            // is shown, without restarting. Bounded to the stored thumbnail
-            // resolution (256px, see QlipperItem) so icons stay crisp.
-            if (metric == PM_SmallIconSize)
-                return QlipperPreferences::Instance()->menuIconSize();
-            return QProxyStyle::pixelMetric(metric, option, widget);
-        }
-
-        int styleHint(StyleHint hint, const QStyleOption *option = nullptr,
-                      const QWidget *widget = nullptr,
-                      QStyleHintReturn *returnData = nullptr) const override
-        {
-            if (hint == SH_Menu_Scrollable)
-                return 1;
-            return QProxyStyle::styleHint(hint, option, widget, returnData);
-        }
-    };
+    // Role on each list item that stores the source model row, so the matching
+    // QlipperModel index can be reconstructed when the entry is activated.
+    const int ModelRowRole = Qt::UserRole + 1;
 }
 
 QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     : QMenu(parent)
     , m_model(model)
 {
-    // Larger icons + scrollable menu, scoped to this widget only.
-    auto *menuStyle = new HistoryMenuStyle;
-    menuStyle->setParent(this);
-    setStyle(menuStyle);
-
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(tr("Search history..."));
     m_search->setClearButtonEnabled(true);
+    m_search->setMinimumWidth(320);
     m_search->installEventFilter(this);
     connect(m_search, &QLineEdit::textChanged, this, &QlipperHistoryMenu::rebuild);
 
@@ -84,8 +54,21 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     addAction(searchAction);
     addSeparator();
 
+    m_list = new QListWidget(this);
+    m_list->setUniformItemSizes(true);
+    m_list->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_list->setFrameShape(QFrame::NoFrame);
+    m_list->setMinimumWidth(320);
+    // A single click on an entry activates it, like a menu item.
+    connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *) { activateCurrent(); });
+
+    QWidgetAction *listAction = new QWidgetAction(this);
+    listAction->setDefaultWidget(m_list);
+    addAction(listAction);
+
     connect(this, &QMenu::aboutToShow, this, &QlipperHistoryMenu::onAboutToShow);
-    connect(this, &QMenu::triggered, this, &QlipperHistoryMenu::onMenuTriggered);
 
     connect(model, &QAbstractItemModel::modelReset, this, &QlipperHistoryMenu::rebuild);
     connect(model, &QAbstractItemModel::rowsInserted, this, &QlipperHistoryMenu::rebuild);
@@ -98,21 +81,18 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
 
 void QlipperHistoryMenu::rebuild()
 {
-    const QList<QAction *> oldActions = m_itemActions;
-    for (QAction *action : oldActions)
-    {
-        removeAction(action);
-        action->deleteLater();
-    }
-    m_itemActions.clear();
+    m_list->clear();
+
+    const int icon = QlipperPreferences::Instance()->menuIconSize();
+    m_list->setIconSize(QSize(icon, icon));
 
     const QString filter = m_search->text();
     const bool filtering = !filter.isEmpty();
 
-    // All matching entries are added; the "Items shown" preference limits how
-    // many are *visible* before the menu scrolls (see applyHeightLimit()), not
-    // how many exist in the menu. Filtering scans the whole history via the
-    // full, untruncated SearchRole.
+    // Every matching entry is added; the "Items shown" preference limits how
+    // many are *visible* before the list scrolls (see applyHeightLimit()), not
+    // how many exist. Filtering scans the whole history via the full,
+    // untruncated SearchRole.
     const int rows = m_model->rowCount(QModelIndex());
     for (int i = 0; i < rows; ++i)
     {
@@ -125,71 +105,87 @@ void QlipperHistoryMenu::rebuild()
                 continue;
         }
 
-        const QString text = idx.data(Qt::DisplayRole).toString();
-        QAction *action = new QAction(qvariant_cast<QIcon>(idx.data(Qt::DecorationRole)), text, this);
-        action->setFont(qvariant_cast<QFont>(idx.data(Qt::FontRole)));
-        action->setToolTip(idx.data(Qt::ToolTipRole).toString());
-        QVariant v;
-        v.setValue(idx);
-        action->setData(v);
-
-        addAction(action);
-        m_itemActions.append(action);
+        QListWidgetItem *item = new QListWidgetItem(
+            qvariant_cast<QIcon>(idx.data(Qt::DecorationRole)),
+            idx.data(Qt::DisplayRole).toString());
+        item->setFont(qvariant_cast<QFont>(idx.data(Qt::FontRole)));
+        item->setToolTip(idx.data(Qt::ToolTipRole).toString());
+        item->setData(ModelRowRole, i);
+        m_list->addItem(item);
     }
 
-    if (m_itemActions.isEmpty())
+    if (m_list->count() == 0)
     {
-        QAction *empty = new QAction(tr("No matches"), this);
-        empty->setEnabled(false);
-        addAction(empty);
-        m_itemActions.append(empty);
+        QListWidgetItem *empty = new QListWidgetItem(tr("No matches"));
+        empty->setFlags(Qt::NoItemFlags);
+        m_list->addItem(empty);
     }
 
-    // Pre-select the first entry so that after opening the menu (or after
-    // typing a filter) the top match is already highlighted and a single
-    // Enter activates it. Focus stays in the search box for typing.
+    // Pre-select the first entry so typing a query and pressing Enter activates
+    // the top match. Focus stays in the search box for typing.
     selectFirst();
+    applyHeightLimit();
 }
 
 void QlipperHistoryMenu::selectFirst()
 {
-    if (!m_itemActions.isEmpty() && m_itemActions.first()->isEnabled())
-        setActiveAction(m_itemActions.first());
+    for (int r = 0; r < m_list->count(); ++r)
+    {
+        if (m_list->item(r)->flags() & Qt::ItemIsEnabled)
+        {
+            m_list->setCurrentRow(r);
+            return;
+        }
+    }
+}
+
+int QlipperHistoryMenu::rowPixelHeight() const
+{
+    if (m_list->count() > 0)
+    {
+        const int h = m_list->sizeHintForRow(0);
+        if (h > 0)
+            return h;
+    }
+    return QlipperPreferences::Instance()->menuIconSize() + 6;
 }
 
 void QlipperHistoryMenu::applyHeightLimit()
 {
+    const int rowH = rowPixelHeight();
+    const int count = m_list->count();
     const int visible = QlipperPreferences::Instance()->visibleCount();
-    if (visible <= 0)
+
+    // How many rows the viewport should show: the preference, or all of them
+    // when it is 0 (no limit) or when there are fewer entries than the limit.
+    int wanted = (visible > 0) ? qMin(visible, count) : count;
+    wanted = qMax(1, wanted);
+
+    // Never let the menu grow past the screen: clamp to what fits, and the
+    // list scrolls for the rest.
+    const QScreen *scr = screen() ? screen() : QGuiApplication::primaryScreen();
+    if (scr)
     {
-        // No limit: let the menu grow (QMenu still scrolls if it exceeds the
-        // screen height).
-        setMaximumHeight(QWIDGETSIZE_MAX);
-        return;
+        const int screenH = scr->availableGeometry().height();
+        const int chrome = m_search->sizeHint().height() + 90; // separator, frame, title bar, slack
+        const int maxRows = qMax(1, (screenH - chrome) / rowH);
+        wanted = qMin(wanted, maxRows);
     }
-    if (m_itemActions.isEmpty())
-        return;
 
-    // Row height of a real entry (valid only once the menu has been laid out).
-    const int itemH = actionGeometry(m_itemActions.first()).height();
-    if (itemH <= 0)
-        return;
+    const int frame = 2 * m_list->frameWidth();
+    const int listH = wanted * rowH + frame;
+    m_list->setFixedHeight(listH);
 
-    // Height of the non-entry rows (search box + separator) that are always on
-    // top of the list.
-    int chrome = 0;
-    const QList<QAction *> acts = actions();
-    for (QAction *a : acts)
-        if (!m_itemActions.contains(a))
-            chrome += actionGeometry(a).height();
-
-    const QMargins m = contentsMargins();
-    const int frame = m.top() + m.bottom() + 4;
-
-    // Cap the menu so only `visible` entries fit; the rest are reachable by
-    // scrolling (SH_Menu_Scrollable is enabled in the menu's proxy style).
-    // This is only a ceiling: with fewer entries the menu stays smaller.
-    setMaximumHeight(chrome + visible * itemH + frame);
+    // QMenu fixes its size when it pops up and does not re-fit (its cached size
+    // hint is stale) when a child widget-action changes size after filtering.
+    // Once the constant chrome above the list has been measured, drive the
+    // menu height directly so it hugs the list, keeping the top-left corner.
+    if (isVisible() && m_chrome >= 0)
+    {
+        const QPoint tl = pos();
+        setFixedHeight(m_chrome + listH);
+        move(tl);
+    }
 }
 
 void QlipperHistoryMenu::onAboutToShow()
@@ -197,59 +193,57 @@ void QlipperHistoryMenu::onAboutToShow()
     m_search->clear();
     rebuild();
     m_search->setFocus();
-    // rebuild() already highlighted the first entry, but QMenu resets its
-    // current action when it is actually shown (and highlights whatever sits
-    // under the cursor when it pops up there). Re-assert once the menu is up.
-    QTimer::singleShot(0, this, [this]{ selectFirst(); });
+    // Re-assert the selection and sizing once the menu is actually shown (row
+    // heights are only exact after layout). Measure the constant chrome above
+    // the list on first show so later filtering can resize the menu to fit.
+    QTimer::singleShot(0, this, [this]{
+        if (m_chrome < 0 && m_list->height() > 0)
+            m_chrome = height() - m_list->height();
+        applyHeightLimit();
+        selectFirst();
+    });
 }
 
-void QlipperHistoryMenu::onMenuTriggered(QAction *action)
+void QlipperHistoryMenu::moveCurrent(int direction)
 {
-    const QVariant v = action->data();
-    if (v.canConvert<QModelIndex>())
-        activateIndex(qvariant_cast<QModelIndex>(v));
+    const int count = m_list->count();
+    if (count == 0 || !(m_list->item(0)->flags() & Qt::ItemIsEnabled))
+        return;
+
+    int r = m_list->currentRow();
+    if (r < 0)
+        r = (direction > 0) ? 0 : count - 1;
+    else
+        r = (r + direction + count) % count;
+    m_list->setCurrentRow(r); // also scrolls to keep the row visible
 }
 
-void QlipperHistoryMenu::activateIndex(const QModelIndex &index)
+void QlipperHistoryMenu::activateCurrent()
 {
-    if (!index.isValid())
+    QListWidgetItem *it = m_list->currentItem();
+    if (!it || !(it->flags() & Qt::ItemIsEnabled))
         return;
-    emit triggered(index);
+    const QModelIndex idx = m_model->index(it->data(ModelRowRole).toInt(), 0);
+    if (idx.isValid())
+        emit triggered(idx);
 }
 
-void QlipperHistoryMenu::highlightStep(int direction)
+void QlipperHistoryMenu::removeCurrent()
 {
-    if (m_itemActions.isEmpty() || !m_itemActions.first()->isEnabled())
+    QListWidgetItem *it = m_list->currentItem();
+    if (!it || !(it->flags() & Qt::ItemIsEnabled))
         return;
-
-    const int count = m_itemActions.count();
-    const int current = m_itemActions.indexOf(activeAction());
-    const int next = current == -1 ? (direction > 0 ? 0 : count - 1)
-                                    : (current + direction + count) % count;
-    setActiveAction(m_itemActions.at(next));
-}
-
-void QlipperHistoryMenu::removeHighlighted()
-{
-    QAction *a = activeAction();
-    if (!a)
-        return;
-    const QVariant v = a->data();
-    if (!v.canConvert<QModelIndex>())
-        return;
-    const QModelIndex idx = qvariant_cast<QModelIndex>(v);
+    const QModelIndex idx = m_model->index(it->data(ModelRowRole).toInt(), 0);
     if (!idx.isValid())
         return;
 
-    const int pos = m_itemActions.indexOf(a);
+    const int listRow = m_list->currentRow();
     m_model->removeRow(idx.row(), idx.parent());
-    // rebuild() has already run synchronously, via the model's rowsRemoved signal.
-    if (!m_itemActions.isEmpty())
-    {
-        const int next = qMin(pos, m_itemActions.count() - 1);
-        if (m_itemActions.at(next)->isEnabled())
-            setActiveAction(m_itemActions.at(next));
-    }
+    // The model's rowsRemoved signal has already run rebuild() synchronously,
+    // which reset the selection to the first row; move it back near where the
+    // removed entry was.
+    if (m_list->count() > 0 && (m_list->item(0)->flags() & Qt::ItemIsEnabled))
+        m_list->setCurrentRow(qMin(listRow, m_list->count() - 1));
 }
 
 bool QlipperHistoryMenu::eventFilter(QObject *watched, QEvent *event)
@@ -263,32 +257,22 @@ bool QlipperHistoryMenu::eventFilter(QObject *watched, QEvent *event)
             close();
             return true;
         case Qt::Key_Down:
-            highlightStep(1);
+            moveCurrent(1);
             return true;
         case Qt::Key_Up:
-            highlightStep(-1);
+            moveCurrent(-1);
             return true;
         case Qt::Key_Return:
         case Qt::Key_Enter:
-        {
-            QAction *a = activeAction();
-            if ((!a || !a->isEnabled()) && !m_itemActions.isEmpty() && m_itemActions.first()->isEnabled())
-                a = m_itemActions.first();
-            if (a && a->isEnabled())
-            {
-                const QVariant v = a->data();
-                if (v.canConvert<QModelIndex>())
-                    activateIndex(qvariant_cast<QModelIndex>(v));
-            }
+            activateCurrent();
             return true;
-        }
         case Qt::Key_Delete:
-            // Only steal Delete when an entry is actually highlighted (i.e. the
-            // user has navigated with arrow keys); otherwise let the line edit
-            // handle it as ordinary forward-delete while typing a filter.
-            if (QAction *a = activeAction(); a && a->isEnabled() && m_itemActions.contains(a))
+            // Only steal Delete when a real entry is highlighted; otherwise let
+            // the line edit handle it as forward-delete while typing a filter.
+            if (QListWidgetItem *it = m_list->currentItem();
+                it && (it->flags() & Qt::ItemIsEnabled))
             {
-                removeHighlighted();
+                removeCurrent();
                 return true;
             }
             break;
