@@ -94,7 +94,14 @@ void QlipperSystray::shortcut_activated()
         m_shortcutMenu->hide();
     else
     {
-        m_shortcutMenu->popup(QCursor::pos());
+        const QPoint pos = QCursor::pos();
+        m_shortcutMenu->popup(pos);
+        // popup() flips the menu upwards when it would run off the bottom of
+        // the screen, which leaves the cursor at the menu's bottom edge. Force
+        // the top-left corner to the cursor instead, so the menu always opens
+        // downwards/rightwards from the pointer. (X11; on Wayland the
+        // compositor controls window placement and this is a no-op.)
+        m_shortcutMenu->move(pos);
         // activateWindow and raise are mandatory to get proper focus for keyboard after global_key.
         m_shortcutMenu->activateWindow();
         m_shortcutMenu->raise();

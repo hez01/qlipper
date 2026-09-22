@@ -69,6 +69,8 @@ public:
     void toClipboard(const Actions & actions) const;
 
     QString displayRole() const;
+    // Full, untruncated text used for menu search (displayRole() is truncated).
+    QString searchRole() const;
     QIcon decorationRole() const;
     QString tooltipRole() const;
 

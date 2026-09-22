@@ -48,7 +48,7 @@ QlipperModel::QlipperModel(QObject *parent) :
 {
     m_network = new QlipperNetwork(this);
 
-    m_boldFont.setBold(true);
+    loadFonts();
 
     m_sticky = QlipperPreferences::Instance()->getStickyItems();
     m_dynamic = QlipperDatabase::Instance()->loadDynamicItems();
@@ -88,6 +88,7 @@ QlipperModel::~QlipperModel()
 
 void QlipperModel::resetPreferences()
 {
+    loadFonts();
     beginRemoveRows(QModelIndex(), 0, m_sticky.count() - 1);
     m_sticky.clear();
     endRemoveRows();
@@ -95,6 +96,20 @@ void QlipperModel::resetPreferences()
     beginInsertRows(QModelIndex(), 0, sticky.count() - 1);
     m_sticky = sticky;
     endInsertRows();
+}
+
+void QlipperModel::loadFonts()
+{
+    m_normalFont = QFont();
+    m_boldFont = QFont();
+    m_boldFont.setBold(true);
+
+    const int pt = QlipperPreferences::Instance()->menuFontPointSize();
+    if (pt > 0)
+    {
+        m_normalFont.setPointSize(pt);
+        m_boldFont.setPointSize(pt);
+    }
 }
 
 int QlipperModel::rowCount(const QModelIndex&) const
@@ -129,6 +144,8 @@ QVariant QlipperModel::data(const QModelIndex& index, int role) const
     {
     case Qt::DisplayRole:
         return list.at(row).displayRole();
+    case QlipperModel::SearchRole:
+        return list.at(row).searchRole();
     case Qt::DecorationRole:
         return list.at(row).decorationRole();
     case Qt::ToolTipRole:

@@ -149,7 +149,7 @@ bool QlipperItem::setImageContent(const QImage &image, const QMimeData *mimeData
     if (path.isEmpty())
         return false;
 
-    const QImage thumbnail = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    const QImage thumbnail = image.scaled(256, 256, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     QByteArray thumbnailBytes;
     QBuffer thumbnailBuf(&thumbnailBytes);
     thumbnailBuf.open(QIODevice::WriteOnly);
@@ -260,6 +260,14 @@ QString QlipperItem::displayRole() const
     }
 
     return "";
+}
+
+QString QlipperItem::searchRole() const
+{
+    // Search must match the entire clipboard content, not the truncated preview.
+    if (m_contentType == QlipperItem::Image)
+        return QObject::tr("Image %1").arg(imageDimensions());
+    return m_display;
 }
 
 QIcon QlipperItem::decorationRole() const

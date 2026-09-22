@@ -36,6 +36,9 @@ QlipperPreferencesDialog::QlipperPreferencesDialog(QWidget *parent) :
     QlipperPreferences *s = QlipperPreferences::Instance();
     historyComboBox->setValue(s->historyCount());
     displaySizeComboBox->setValue(s->displaySize());
+    iconSizeSpinBox->setValue(s->menuIconSize());
+    fontSizeSpinBox->setValue(s->menuFontPointSize());
+    visibleCountSpinBox->setValue(s->visibleCount());
     trimCheckBox->setChecked(s->trim());
     shortcutWidget->setKeySequence(QKeySequence(s->shortcut()));
     if (QGuiApplication::platformName() == "wayland")
@@ -107,6 +110,9 @@ void QlipperPreferencesDialog::accept()
     QlipperPreferences *s = QlipperPreferences::Instance();
     s->setValue("historyCount", historyComboBox->value());
     s->setValue("displaySize", displaySizeComboBox->value());
+    s->setValue("menuIconSize", iconSizeSpinBox->value());
+    s->setValue("menuFontPointSize", fontSizeSpinBox->value());
+    s->setValue("visibleCount", visibleCountSpinBox->value());
     s->setValue("trim", trimCheckBox->isChecked());
     s->setValue("platformExtensions", platformExtensionsCheckBox->isChecked());
     s->setValue("synchronizePSE", synchronizePSE->currentIndex());

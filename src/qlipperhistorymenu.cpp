@@ -20,23 +20,18 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <QLineEdit>
 #include <QWidgetAction>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QProxyStyle>
 #include <QStyle>
 
 #include "qlippermodel.h"
 #include "qlipperhistorymenu.h"
+#include "qlipperpreferences.h"
 
 Q_DECLARE_METATYPE(QModelIndex)
 
 namespace
 {
-    // Icon edge (in logical pixels) for entries shown in the history menu.
-    // The default style small-icon size (~16px) is far too small to preview a
-    // copied image, so the history menu enlarges it. Kept <= the stored
-    // thumbnail resolution (128px, see QlipperItem) so icons stay crisp,
-    // including on HiDPI screens where they are drawn at 2x.
-    const int kHistoryIconSize = 64;
-
     // Proxy style applied only to the history menu. It does two things:
     //  * enlarges item icons (PM_SmallIconSize) so image thumbnails are big
     //    enough to actually recognise, and
@@ -50,8 +45,11 @@ namespace
         int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr,
                         const QWidget *widget = nullptr) const override
         {
+            // Read live so the size setting takes effect the next time the menu
+            // is shown, without restarting. Bounded to the stored thumbnail
+            // resolution (256px, see QlipperItem) so icons stay crisp.
             if (metric == PM_SmallIconSize)
-                return kHistoryIconSize;
+                return QlipperPreferences::Instance()->menuIconSize();
             return QProxyStyle::pixelMetric(metric, option, widget);
         }
 
@@ -109,14 +107,30 @@ void QlipperHistoryMenu::rebuild()
     m_itemActions.clear();
 
     const QString filter = m_search->text();
+    const bool filtering = !filter.isEmpty();
+    // When not filtering, cap the menu at the first N entries (0 = show all).
+    // Filtering always scans the whole history (SearchRole is the full,
+    // untruncated content), so a match below the cap is still found and shown.
+    const int visible = QlipperPreferences::Instance()->visibleCount();
+
     const int rows = m_model->rowCount(QModelIndex());
+    int shown = 0;
     for (int i = 0; i < rows; ++i)
     {
         const QModelIndex idx = m_model->index(i, 0);
-        const QString text = idx.data(Qt::DisplayRole).toString();
-        if (!filter.isEmpty() && !text.contains(filter, Qt::CaseInsensitive))
-            continue;
 
+        if (filtering)
+        {
+            const QString haystack = idx.data(QlipperModel::SearchRole).toString();
+            if (!haystack.contains(filter, Qt::CaseInsensitive))
+                continue;
+        }
+        else if (visible > 0 && shown >= visible)
+        {
+            break;
+        }
+
+        const QString text = idx.data(Qt::DisplayRole).toString();
         QAction *action = new QAction(qvariant_cast<QIcon>(idx.data(Qt::DecorationRole)), text, this);
         action->setFont(qvariant_cast<QFont>(idx.data(Qt::FontRole)));
         action->setToolTip(idx.data(Qt::ToolTipRole).toString());
@@ -126,6 +140,7 @@ void QlipperHistoryMenu::rebuild()
 
         addAction(action);
         m_itemActions.append(action);
+        ++shown;
     }
 
     if (m_itemActions.isEmpty())
@@ -135,6 +150,17 @@ void QlipperHistoryMenu::rebuild()
         addAction(empty);
         m_itemActions.append(empty);
     }
+
+    // Pre-select the first entry so that after opening the menu (or after
+    // typing a filter) the top match is already highlighted and a single
+    // Enter activates it. Focus stays in the search box for typing.
+    selectFirst();
+}
+
+void QlipperHistoryMenu::selectFirst()
+{
+    if (!m_itemActions.isEmpty() && m_itemActions.first()->isEnabled())
+        setActiveAction(m_itemActions.first());
 }
 
 void QlipperHistoryMenu::onAboutToShow()
@@ -142,6 +168,10 @@ void QlipperHistoryMenu::onAboutToShow()
     m_search->clear();
     rebuild();
     m_search->setFocus();
+    // rebuild() already highlighted the first entry, but QMenu resets its
+    // current action when it is actually shown (and highlights whatever sits
+    // under the cursor when it pops up there). Re-assert once the menu is up.
+    QTimer::singleShot(0, this, [this]{ selectFirst(); });
 }
 
 void QlipperHistoryMenu::onMenuTriggered(QAction *action)
@@ -213,7 +243,7 @@ bool QlipperHistoryMenu::eventFilter(QObject *watched, QEvent *event)
         case Qt::Key_Enter:
         {
             QAction *a = activeAction();
-            if (!a && m_itemActions.count() == 1)
+            if ((!a || !a->isEnabled()) && !m_itemActions.isEmpty() && m_itemActions.first()->isEnabled())
                 a = m_itemActions.first();
             if (a && a->isEnabled())
             {

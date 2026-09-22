@@ -197,6 +197,21 @@ int QlipperPreferences::displaySize() const
     return value("displaySize", 30).toInt();
 }
 
+int QlipperPreferences::menuIconSize() const
+{
+    return qBound(16, value("menuIconSize", 64).toInt(), 256);
+}
+
+int QlipperPreferences::menuFontPointSize() const
+{
+    return qMax(0, value("menuFontPointSize", 0).toInt());
+}
+
+int QlipperPreferences::visibleCount() const
+{
+    return qMax(0, value("visibleCount", 0).toInt());
+}
+
 QString QlipperPreferences::shortcut() const
 {
     return value("shortcut", "CTRL+ALT+V").toString();

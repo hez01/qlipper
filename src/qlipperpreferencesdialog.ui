@@ -186,6 +186,99 @@
          </property>
         </widget>
        </item>
+       <item row="8" column="0" colspan="2">
+        <widget class="QGroupBox" name="appearanceGroup">
+         <property name="title">
+          <string>Menu Appearance</string>
+         </property>
+         <layout class="QGridLayout" name="appearanceLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="iconSizeLabel">
+            <property name="text">
+             <string>Item image size:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QSpinBox" name="iconSizeSpinBox">
+            <property name="toolTip">
+             <string>Size of image thumbnails and icons in the history menu.</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+            </property>
+            <property name="suffix">
+             <string> px</string>
+            </property>
+            <property name="minimum">
+             <number>16</number>
+            </property>
+            <property name="maximum">
+             <number>256</number>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="fontSizeLabel">
+            <property name="text">
+             <string>Item text size:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QSpinBox" name="fontSizeSpinBox">
+            <property name="toolTip">
+             <string>Font size of entries in the history menu. 0 = system default.</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+            </property>
+            <property name="specialValueText">
+             <string>Default</string>
+            </property>
+            <property name="suffix">
+             <string> pt</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>72</number>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="visibleCountLabel">
+            <property name="text">
+             <string>Items shown in menu:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QSpinBox" name="visibleCountSpinBox">
+            <property name="toolTip">
+             <string>How many entries the menu shows at once. Search always scans the whole history. 0 = show all.</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+            </property>
+            <property name="specialValueText">
+             <string>All</string>
+            </property>
+            <property name="suffix">
+             <string> items</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>999999</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
        <item row="10" column="0" colspan="2">
         <spacer name="verticalSpacer">
          <property name="orientation">

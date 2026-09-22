@@ -37,6 +37,10 @@ public:
     explicit QlipperModel(QObject *parent = 0);
     ~QlipperModel();
 
+    // Full, untruncated text of an entry, used by the menu to filter on the
+    // whole clipboard content instead of just the visible preview.
+    enum Roles { SearchRole = Qt::UserRole + 1 };
+
     void resetPreferences();
 
 public slots:
@@ -65,6 +69,7 @@ private:
 
     QList<QlipperItem> getList(int &row) const;
     void setCurrentDynamic(int ix);
+    void loadFonts();
 
 private slots:
     void clipboard_changed(QClipboard::Mode);

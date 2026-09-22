@@ -1,3 +1,29 @@
+qlipper (1:6.1.0-4) unstable; urgency=medium
+
+  * The history menu now anchors its top-left corner at the mouse cursor
+    (menu opens downwards/rightwards) instead of flipping upwards near the
+    bottom of the screen. X11 only; on Wayland the compositor decides
+    window placement.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 16:44:35 +0000
+
+qlipper (1:6.1.0-3) unstable; urgency=medium
+
+  * Search now matches the entire clipboard content of each entry, not
+    just the truncated preview text shown in the menu.
+  * The clipboard history menu can now scroll instead of overflowing off
+    the screen, and image thumbnails / entry icons are shown larger.
+  * New "Menu Appearance" preferences: item image size, item text size,
+    and how many entries are shown in the menu at once (search still
+    scans the whole history regardless of that cap).
+  * The first entry in the menu is now auto-selected on open and while
+    filtering, so typing a query and pressing Enter activates the top
+    match. Enter always falls back to the first entry.
+  * Builds on Ubuntu 24.04: KF6 KSystemClipboard is now optional and
+    falls back to QClipboard when KF6 GuiAddons is not installed.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 16:35:49 +0000
+
 qlipper (6.1.0-2) unstable; urgency=medium
 
   * Migrate dynamic-history storage from a QSettings array to SQLite

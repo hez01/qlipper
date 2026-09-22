@@ -53,6 +53,7 @@ private:
     QList<QAction *> m_itemActions;
 
     void activateIndex(const QModelIndex &index);
+    void selectFirst();
     void highlightStep(int direction);
     void removeHighlighted();
 };

@@ -60,6 +60,10 @@ public:
 
     bool trim();
     int displaySize() const;
+    // Menu appearance / display settings (see QlipperHistoryMenu, QlipperModel).
+    int menuIconSize() const;       // thumbnail/icon edge in px (clamped 16..256)
+    int menuFontPointSize() const;  // history entry font size in pt; 0 = system default
+    int visibleCount() const;       // entries shown in the menu when not filtering; 0 = all
     QString shortcut() const;
     int historyCount() const;
     bool platformExtensions() const;
