@@ -146,6 +146,8 @@ QVariant QlipperModel::data(const QModelIndex& index, int role) const
         return list.at(row).displayRole();
     case QlipperModel::SearchRole:
         return list.at(row).searchRole();
+    case QlipperModel::IsImageRole:
+        return list.at(row).contentType() == QlipperItem::Image;
     case Qt::DecorationRole:
         return list.at(row).decorationRole();
     case Qt::ToolTipRole:

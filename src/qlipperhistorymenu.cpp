@@ -26,6 +26,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <QGuiApplication>
 #include <QFontMetrics>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QApplication>
 
 #include "qlippermodel.h"
 #include "qlipperhistorymenu.h"
@@ -35,9 +38,112 @@ Q_DECLARE_METATYPE(QModelIndex)
 
 namespace
 {
-    // Role on each list item that stores the source model row, so the matching
-    // QlipperModel index can be reconstructed when the entry is activated.
+    // Roles stored on each list item: the source model row (to reconstruct the
+    // QlipperModel index on activation) and whether the entry is an image (so
+    // image rows can be drawn taller than text rows).
     const int ModelRowRole = Qt::UserRole + 1;
+    const int IsImageRole = Qt::UserRole + 2;
+
+    // Width needed to show `displaySize` characters at the configured font size,
+    // plus the (largest, i.e. image) icon column and the scrollbar.
+    int computeContentWidth(const QWidget *widget)
+    {
+        const int chars = QlipperPreferences::Instance()->displaySize();
+        const int pt = QlipperPreferences::Instance()->menuFontPointSize();
+        QFont f = widget ? widget->font() : QFont();
+        if (pt > 0)
+            f.setPointSize(pt);
+        f.setBold(true); // the current entry is bold, i.e. the widest case
+        const QFontMetrics fm(f);
+        const int avg = qMax(1, fm.averageCharWidth());
+        const int textW = avg * (chars + 2);
+        const int iconW = QlipperPreferences::Instance()->menuIconSize();
+        const QStyle *st = widget ? widget->style() : QApplication::style();
+        const int scrollbar = st->pixelMetric(QStyle::PM_ScrollBarExtent);
+        return iconW + 8 /*gap*/ + textW + 16 /*padding*/ + scrollbar + 4;
+    }
+
+    // Draws each history row with a per-entry height: short for text, tall for
+    // images (so a copied image shows a real thumbnail). A single QListWidget
+    // has one icon size for all rows, so the drawing/sizing is done here.
+    class HistoryItemDelegate : public QStyledItemDelegate
+    {
+    public:
+        using QStyledItemDelegate::QStyledItemDelegate;
+
+        QSize sizeHint(const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+        {
+            return QSize(computeContentWidth(opt.widget), rowHeight(opt, idx));
+        }
+
+        void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+        {
+            QStyleOptionViewItem o(opt);
+            initStyleOption(&o, idx);
+            const QWidget *w = o.widget;
+            QStyle *st = w ? w->style() : QApplication::style();
+
+            // Paint background / selection highlight only (no built-in icon/text).
+            QStyleOptionViewItem bg(o);
+            bg.text.clear();
+            bg.icon = QIcon();
+            bg.features &= ~QStyleOptionViewItem::HasDecoration;
+            st->drawControl(QStyle::CE_ItemViewItem, &bg, p, w);
+
+            const QRect r = opt.rect;
+            const int iconSz = iconSizeFor(idx);
+            int x = r.left() + kHPad;
+
+            const QIcon ic = idx.data(Qt::DecorationRole).value<QIcon>();
+            if (!ic.isNull() && iconSz > 0)
+            {
+                const QPixmap pm = ic.pixmap(QSize(iconSz, iconSz));
+                const QSizeF ps = pm.deviceIndependentSize();
+                const int px = x + int((iconSz - ps.width()) / 2);
+                const int py = r.top() + int((r.height() - ps.height()) / 2);
+                p->drawPixmap(px, py, pm);
+                x += iconSz + kGap;
+            }
+
+            QFont f = idx.data(Qt::FontRole).value<QFont>();
+            if (f.resolveMask() == 0)
+                f = o.font;
+            const QFontMetrics fm(f);
+            const QRect textRect(x, r.top(), r.right() - x - kHPad, r.height());
+            const QPalette::ColorGroup cg = (o.state & QStyle::State_Enabled) ? QPalette::Normal : QPalette::Disabled;
+            const QColor col = (o.state & QStyle::State_Selected)
+                                 ? o.palette.color(cg, QPalette::HighlightedText)
+                                 : o.palette.color(cg, QPalette::Text);
+            p->save();
+            p->setFont(f);
+            p->setPen(col);
+            const QString txt = fm.elidedText(idx.data(Qt::DisplayRole).toString(),
+                                              Qt::ElideRight, textRect.width());
+            p->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, txt);
+            p->restore();
+        }
+
+    private:
+        static constexpr int kHPad = 6;
+        static constexpr int kGap = 8;
+        static constexpr int kVPad = 4;
+        static constexpr int kTextIcon = 20; // small icon for text/url entries
+
+        static int iconSizeFor(const QModelIndex &idx)
+        {
+            return idx.data(IsImageRole).toBool()
+                     ? QlipperPreferences::Instance()->menuIconSize()
+                     : kTextIcon;
+        }
+        int rowHeight(const QStyleOptionViewItem &opt, const QModelIndex &idx) const
+        {
+            QFont f = idx.data(Qt::FontRole).value<QFont>();
+            if (f.resolveMask() == 0)
+                f = opt.font;
+            const int fh = QFontMetrics(f).height();
+            return qMax(fh, iconSizeFor(idx)) + 2 * kVPad;
+        }
+    };
 }
 
 QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
@@ -56,7 +162,8 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     addSeparator();
 
     m_list = new QListWidget(this);
-    m_list->setUniformItemSizes(true);
+    m_list->setUniformItemSizes(false); // rows vary: short text, tall images
+    m_list->setItemDelegate(new HistoryItemDelegate(m_list));
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -97,15 +204,8 @@ void QlipperHistoryMenu::rebuild()
     m_keyboardNavigated = false;
     m_list->clear();
 
-    const int icon = QlipperPreferences::Instance()->menuIconSize();
-    m_list->setIconSize(QSize(icon, icon));
-
     const QString filter = m_search->text();
     const bool filtering = !filter.isEmpty();
-
-    // Deterministic item size, so row heights never depend on when Qt lazily
-    // computes them (which made entries appear to grow on the first keystroke).
-    const QSize hint(contentWidth(), itemRowHeight());
 
     // Every matching entry is added; the "Items shown" preference limits how
     // many are *visible* before the list scrolls (see applyHeightLimit()), not
@@ -129,7 +229,7 @@ void QlipperHistoryMenu::rebuild()
         item->setFont(qvariant_cast<QFont>(idx.data(Qt::FontRole)));
         item->setToolTip(idx.data(Qt::ToolTipRole).toString());
         item->setData(ModelRowRole, i);
-        item->setSizeHint(hint);
+        item->setData(IsImageRole, idx.data(QlipperModel::IsImageRole).toBool());
         m_list->addItem(item);
     }
 
@@ -137,7 +237,6 @@ void QlipperHistoryMenu::rebuild()
     {
         QListWidgetItem *empty = new QListWidgetItem(tr("No matches"));
         empty->setFlags(Qt::NoItemFlags);
-        empty->setSizeHint(hint);
         m_list->addItem(empty);
     }
 
@@ -165,71 +264,38 @@ void QlipperHistoryMenu::selectFirst()
     }
 }
 
-int QlipperHistoryMenu::itemRowHeight() const
-{
-    const int pt = QlipperPreferences::Instance()->menuFontPointSize();
-    QFont f = m_list->font();
-    if (pt > 0)
-        f.setPointSize(pt);
-    const QFontMetrics fm(f);
-    const int iconSize = QlipperPreferences::Instance()->menuIconSize();
-    return qMax(iconSize, fm.height()) + 6;
-}
-
-int QlipperHistoryMenu::rowPixelHeight() const
-{
-    return itemRowHeight();
-}
-
 int QlipperHistoryMenu::contentWidth() const
 {
-    // Width needed to show `displaySize` characters at the configured font size
-    // (Y), plus the icon and scrollbar. This is what makes the menu "as wide as
-    // required to fit X characters" rather than a fixed narrow width.
-    const int chars = QlipperPreferences::Instance()->displaySize();
-    const int pt = QlipperPreferences::Instance()->menuFontPointSize();
-
-    QFont f = m_list->font();
-    if (pt > 0)
-        f.setPointSize(pt);
-    f.setBold(true); // the current entry is bold, i.e. the widest case
-    const QFontMetrics fm(f);
-
-    const int avg = qMax(1, fm.averageCharWidth());
-    const int textW = avg * (chars + 2); // +2 chars of slack for proportional fonts
-
-    const int iconW = QlipperPreferences::Instance()->menuIconSize();
-    const int gap = 8;                                   // icon-to-text gap
-    const int itemPadding = 16;                          // list item left+right padding
-    const int scrollbar = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
-
-    return iconW + gap + textW + itemPadding + scrollbar + 4;
+    return computeContentWidth(m_list);
 }
 
 void QlipperHistoryMenu::applyHeightLimit()
 {
-    const int rowH = rowPixelHeight();
     const int count = m_list->count();
     const int visible = QlipperPreferences::Instance()->visibleCount();
 
-    // How many rows the viewport should show: the preference, or all of them
+    // How many rows to show before scrolling: the preference, or all of them
     // when it is 0 (no limit) or when there are fewer entries than the limit.
     int wanted = (visible > 0) ? qMin(visible, count) : count;
     wanted = qMax(1, wanted);
 
-    // Never let the menu grow past the screen: clamp to what fits, and the
-    // list scrolls for the rest.
+    // Rows now vary in height (short text, tall images), so sum the heights of
+    // the first `wanted` rows rather than multiplying a single row height.
+    int contentH = 0;
+    for (int r = 0; r < wanted; ++r)
+        contentH += m_list->sizeHintForRow(r);
+
+    // Never let the menu grow past the screen; the list scrolls for the rest.
     const QScreen *scr = screen() ? screen() : QGuiApplication::primaryScreen();
     if (scr)
     {
         const int screenH = scr->availableGeometry().height();
         const int chrome = m_search->sizeHint().height() + 90; // separator, frame, title bar, slack
-        const int maxRows = qMax(1, (screenH - chrome) / rowH);
-        wanted = qMin(wanted, maxRows);
+        contentH = qMin(contentH, qMax(50, screenH - chrome));
     }
 
     const int frame = 2 * m_list->frameWidth();
-    const int listH = wanted * rowH + frame;
+    const int listH = contentH + frame;
     m_list->setFixedHeight(listH);
 
     // Width: wide enough to fit the configured number of characters. Setting a

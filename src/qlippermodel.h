@@ -39,7 +39,7 @@ public:
 
     // Full, untruncated text of an entry, used by the menu to filter on the
     // whole clipboard content instead of just the visible preview.
-    enum Roles { SearchRole = Qt::UserRole + 1 };
+    enum Roles { SearchRole = Qt::UserRole + 1, IsImageRole = Qt::UserRole + 2 };
 
     void resetPreferences();
 

@@ -1,3 +1,11 @@
+qlipper (1:6.1.0-11) unstable; urgency=medium
+
+  * History entries now use per-entry heights: text rows are compact while
+    image rows are tall enough to show a real thumbnail (at the configured
+    image size). Rendering is done by a custom item delegate.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 18:00:29 +0000
+
 qlipper (1:6.1.0-10) unstable; urgency=medium
 
   * Delete key in the history menu now removes an entry only after you
