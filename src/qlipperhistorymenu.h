@@ -60,14 +60,17 @@ private:
     QLineEdit *m_search;
     QListWidget *m_list;
     // Height of everything above the list (search box + separator + menu
-    // frame), measured once when first shown; -1 until then.
+    // frame) and the menu's horizontal frame, measured once when first shown;
+    // -1 until then.
     int m_chrome = -1;
+    int m_hframe = -1;
 
     void selectFirst();
     void moveCurrent(int direction);
     void activateCurrent();
     void removeCurrent();
     int rowPixelHeight() const;
+    int contentWidth() const;
 };
 
 #endif // QLIPPERHISTORYMENU_H

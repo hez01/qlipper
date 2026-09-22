@@ -24,6 +24,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <QTimer>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QFontMetrics>
+#include <QStyle>
 
 #include "qlippermodel.h"
 #include "qlipperhistorymenu.h"
@@ -45,7 +47,6 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(tr("Search history..."));
     m_search->setClearButtonEnabled(true);
-    m_search->setMinimumWidth(320);
     m_search->installEventFilter(this);
     connect(m_search, &QLineEdit::textChanged, this, &QlipperHistoryMenu::rebuild);
 
@@ -60,7 +61,6 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_list->setFrameShape(QFrame::NoFrame);
-    m_list->setMinimumWidth(320);
     // A single click on an entry activates it, like a menu item.
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *) { activateCurrent(); });
 
@@ -150,6 +150,31 @@ int QlipperHistoryMenu::rowPixelHeight() const
     return QlipperPreferences::Instance()->menuIconSize() + 6;
 }
 
+int QlipperHistoryMenu::contentWidth() const
+{
+    // Width needed to show `displaySize` characters at the configured font size
+    // (Y), plus the icon and scrollbar. This is what makes the menu "as wide as
+    // required to fit X characters" rather than a fixed narrow width.
+    const int chars = QlipperPreferences::Instance()->displaySize();
+    const int pt = QlipperPreferences::Instance()->menuFontPointSize();
+
+    QFont f = m_list->font();
+    if (pt > 0)
+        f.setPointSize(pt);
+    f.setBold(true); // the current entry is bold, i.e. the widest case
+    const QFontMetrics fm(f);
+
+    const int avg = qMax(1, fm.averageCharWidth());
+    const int textW = avg * (chars + 2); // +2 chars of slack for proportional fonts
+
+    const int iconW = QlipperPreferences::Instance()->menuIconSize();
+    const int gap = 8;                                   // icon-to-text gap
+    const int itemPadding = 16;                          // list item left+right padding
+    const int scrollbar = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
+
+    return iconW + gap + textW + itemPadding + scrollbar + 4;
+}
+
 void QlipperHistoryMenu::applyHeightLimit()
 {
     const int rowH = rowPixelHeight();
@@ -176,15 +201,30 @@ void QlipperHistoryMenu::applyHeightLimit()
     const int listH = wanted * rowH + frame;
     m_list->setFixedHeight(listH);
 
+    // Width: wide enough to fit the configured number of characters. Setting a
+    // minimum makes the menu pop up at the right width; when already shown, the
+    // menu is resized below (its cached size hint is stale).
+    const int w = contentWidth();
+    m_list->setMinimumWidth(w);
+    m_search->setMinimumWidth(w);
+
     // QMenu fixes its size when it pops up and does not re-fit (its cached size
     // hint is stale) when a child widget-action changes size after filtering.
     // Once the constant chrome above the list has been measured, drive the
     // menu height directly so it hugs the list, keeping the top-left corner.
     if (isVisible() && m_chrome >= 0)
     {
-        const QPoint tl = pos();
-        setFixedHeight(m_chrome + listH);
-        move(tl);
+        const int targetH = m_chrome + listH;
+        const int targetW = (m_hframe >= 0) ? m_hframe + w : width();
+        // Only resize (and re-anchor) when the size actually changed, e.g. after
+        // filtering. On the initial show the menu already popped up at the right
+        // size, and resizing it there would let the WM shift its position.
+        if (targetH != height() || targetW != width())
+        {
+            const QPoint tl = pos();
+            resize(targetW, targetH);
+            move(tl);
+        }
     }
 }
 
@@ -198,7 +238,10 @@ void QlipperHistoryMenu::onAboutToShow()
     // the list on first show so later filtering can resize the menu to fit.
     QTimer::singleShot(0, this, [this]{
         if (m_chrome < 0 && m_list->height() > 0)
+        {
             m_chrome = height() - m_list->height();
+            m_hframe = width() - m_list->width();
+        }
         applyHeightLimit();
         selectFirst();
     });
