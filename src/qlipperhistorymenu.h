@@ -53,6 +53,7 @@ protected:
 
 private slots:
     void rebuild();
+    void rebuildIfVisible();
     void onAboutToShow();
 
 private:
@@ -64,6 +65,9 @@ private:
     // -1 until then.
     int m_chrome = -1;
     int m_hframe = -1;
+    // True only after the user moved the selection with the arrow keys, so the
+    // Delete key removes an entry then but edits the search text otherwise.
+    bool m_keyboardNavigated = false;
 
     void selectFirst();
     void moveCurrent(int direction);

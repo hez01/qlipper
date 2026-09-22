@@ -66,7 +66,10 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     m_list->viewport()->setMouseTracking(true);
     connect(m_list, &QListWidget::itemEntered, this, [this](QListWidgetItem *it) {
         if (it && (it->flags() & Qt::ItemIsEnabled))
+        {
+            m_keyboardNavigated = false;
             m_list->setCurrentItem(it);
+        }
     });
     // A single click on an entry activates it, like a menu item.
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *) { activateCurrent(); });
@@ -77,17 +80,21 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
 
     connect(this, &QMenu::aboutToShow, this, &QlipperHistoryMenu::onAboutToShow);
 
-    connect(model, &QAbstractItemModel::modelReset, this, &QlipperHistoryMenu::rebuild);
-    connect(model, &QAbstractItemModel::rowsInserted, this, &QlipperHistoryMenu::rebuild);
-    connect(model, &QAbstractItemModel::rowsRemoved, this, &QlipperHistoryMenu::rebuild);
-    connect(model, &QAbstractItemModel::rowsMoved, this, &QlipperHistoryMenu::rebuild);
-    connect(model, &QAbstractItemModel::dataChanged, this, &QlipperHistoryMenu::rebuild);
+    // Only rebuild for model changes while the menu is visible; a hidden menu is
+    // rebuilt from scratch in onAboutToShow(), so rebuilding it on every
+    // clipboard change would be wasted work.
+    connect(model, &QAbstractItemModel::modelReset, this, &QlipperHistoryMenu::rebuildIfVisible);
+    connect(model, &QAbstractItemModel::rowsInserted, this, &QlipperHistoryMenu::rebuildIfVisible);
+    connect(model, &QAbstractItemModel::rowsRemoved, this, &QlipperHistoryMenu::rebuildIfVisible);
+    connect(model, &QAbstractItemModel::rowsMoved, this, &QlipperHistoryMenu::rebuildIfVisible);
+    connect(model, &QAbstractItemModel::dataChanged, this, &QlipperHistoryMenu::rebuildIfVisible);
 
     rebuild();
 }
 
 void QlipperHistoryMenu::rebuild()
 {
+    m_keyboardNavigated = false;
     m_list->clear();
 
     const int icon = QlipperPreferences::Instance()->menuIconSize();
@@ -138,6 +145,12 @@ void QlipperHistoryMenu::rebuild()
     // the top match. Focus stays in the search box for typing.
     selectFirst();
     applyHeightLimit();
+}
+
+void QlipperHistoryMenu::rebuildIfVisible()
+{
+    if (isVisible())
+        rebuild();
 }
 
 void QlipperHistoryMenu::selectFirst()
@@ -271,6 +284,7 @@ void QlipperHistoryMenu::moveCurrent(int direction)
     if (count == 0 || !(m_list->item(0)->flags() & Qt::ItemIsEnabled))
         return;
 
+    m_keyboardNavigated = true;
     int r = m_list->currentRow();
     if (r < 0)
         r = (direction > 0) ? 0 : count - 1;
@@ -301,10 +315,14 @@ void QlipperHistoryMenu::removeCurrent()
     const int listRow = m_list->currentRow();
     m_model->removeRow(idx.row(), idx.parent());
     // The model's rowsRemoved signal has already run rebuild() synchronously,
-    // which reset the selection to the first row; move it back near where the
-    // removed entry was.
+    // which reset the selection to the first row (and the keyboard-nav flag);
+    // move it back near where the removed entry was and stay in keyboard-delete
+    // mode so repeated Delete keeps removing entries.
     if (m_list->count() > 0 && (m_list->item(0)->flags() & Qt::ItemIsEnabled))
+    {
         m_list->setCurrentRow(qMin(listRow, m_list->count() - 1));
+        m_keyboardNavigated = true;
+    }
 }
 
 bool QlipperHistoryMenu::eventFilter(QObject *watched, QEvent *event)
@@ -328,13 +346,17 @@ bool QlipperHistoryMenu::eventFilter(QObject *watched, QEvent *event)
             activateCurrent();
             return true;
         case Qt::Key_Delete:
-            // Only steal Delete when a real entry is highlighted; otherwise let
-            // the line edit handle it as forward-delete while typing a filter.
-            if (QListWidgetItem *it = m_list->currentItem();
-                it && (it->flags() & Qt::ItemIsEnabled))
+            // Only remove an entry when the user has navigated to it with the
+            // arrow keys; otherwise let the line edit handle Delete as ordinary
+            // forward-delete while typing a filter.
+            if (m_keyboardNavigated)
             {
-                removeCurrent();
-                return true;
+                if (QListWidgetItem *it = m_list->currentItem();
+                    it && (it->flags() & Qt::ItemIsEnabled))
+                {
+                    removeCurrent();
+                    return true;
+                }
             }
             break;
         default:

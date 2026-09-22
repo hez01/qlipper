@@ -1,3 +1,13 @@
+qlipper (1:6.1.0-10) unstable; urgency=medium
+
+  * Delete key in the history menu now removes an entry only after you
+    navigate to it with the arrow keys; while typing a search it acts as an
+    ordinary forward-delete again (previously it could delete an entry).
+  * The menu no longer rebuilds itself on every clipboard change while it is
+    hidden; it rebuilds when shown.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 17:51:44 +0000
+
 qlipper (1:6.1.0-9) unstable; urgency=medium
 
   * Fix history entries sometimes growing taller on the first keystroke of
