@@ -17,12 +17,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#include <QBuffer>
+#include <QFile>
 #include <QImage>
 #include <QIcon>
 #include <QPainter>
 #include <QPixmapCache>
 #include <QMimeData>
-#include <QRegularExpression>
 #include <QUrl>
 #include <QtDebug>
 
@@ -58,11 +59,6 @@ QlipperItem::QlipperItem(QClipboard::Mode mode)
         m_valid = false;
     }
 
-    //Note: reading all provided image/.*bmp data can make gimp crash
-    //  workadound until someone fixes this in gimp -> just read/store only the image/bmp
-    //  and don't care about other bmps
-    const bool has_bmp = mimeData->hasFormat(QStringLiteral("image/bmp"));
-    const QRegularExpression re_bmp(QStringLiteral("^image/.+-bmp$"));
     foreach (QString format, mimeData->formats())
     {
         //qDebug() << format << mimeData->data(format);
@@ -81,7 +77,7 @@ QlipperItem::QlipperItem(QClipboard::Mode mode)
         // cheap at all, it is better to call it just for the real MIME types,
         // i.e. those containing a '/'.
         if (format.contains(QLatin1Char('/'))
-            && (!has_bmp || !re_bmp.match(format).hasMatch()))
+            && !format.startsWith(QLatin1String("image/")))
             m_content[format] = mimeData->data(format);
     }
 
@@ -103,11 +99,75 @@ QlipperItem::QlipperItem(QClipboard::Mode mode)
     {
         m_contentType = QlipperItem::PlainText;
     }
+    else if (mimeData->hasImage() && setImageContent(qvariant_cast<QImage>(mimeData->imageData()), mimeData))
+    {
+        // contentType and content are set by setImageContent().
+    }
     else
     {
-        // any binary stuff
+        // any other binary stuff: never kept in history (see QlipperModel::clipboard_changed)
         m_contentType = QlipperItem::Binary;
     }
+}
+
+bool QlipperItem::setImageContent(const QImage &image, const QMimeData *mimeData)
+{
+    if (image.isNull())
+        return false;
+
+    // Prefer the format the source app already encoded, to avoid a lossy
+    // re-encode and to keep the disk write to a single pass over bytes we
+    // already have in hand.
+    QString format;
+    QByteArray bytes;
+    for (const QString &f : mimeData->formats())
+    {
+        if (f.startsWith(QLatin1String("image/")))
+        {
+            const QByteArray candidate = mimeData->data(f);
+            if (!candidate.isEmpty())
+            {
+                format = f;
+                bytes = candidate;
+                break;
+            }
+        }
+    }
+    if (bytes.isEmpty())
+    {
+        QBuffer buf(&bytes);
+        buf.open(QIODevice::WriteOnly);
+        if (!image.save(&buf, "PNG"))
+            return false;
+        format = QStringLiteral("image/png");
+    }
+
+    // Content-addressed: identical copies reuse the same file instead of
+    // rewriting it, and QlipperItem::operator== (which compares m_content)
+    // then naturally recognizes them as the same history entry.
+    const QString path = QlipperPreferences::Instance()->cacheImage(bytes, format);
+    if (path.isEmpty())
+        return false;
+
+    const QImage thumbnail = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QByteArray thumbnailBytes;
+    QBuffer thumbnailBuf(&thumbnailBytes);
+    thumbnailBuf.open(QIODevice::WriteOnly);
+    thumbnail.save(&thumbnailBuf, "PNG");
+
+    m_content[QStringLiteral("x-qlipper/image-path")] = path.toUtf8();
+    m_content[QStringLiteral("x-qlipper/image-format")] = format.toUtf8();
+    m_content[QStringLiteral("x-qlipper/thumbnail")] = thumbnailBytes;
+    m_content[QStringLiteral("x-qlipper/dimensions")] = QStringLiteral("%1x%2").arg(image.width()).arg(image.height()).toUtf8();
+
+    m_display.clear();
+    m_contentType = QlipperItem::Image;
+    return true;
+}
+
+QString QlipperItem::imageDimensions() const
+{
+    return QString::fromUtf8(m_content.value(QStringLiteral("x-qlipper/dimensions")));
 }
 
 QlipperItem::QlipperItem(QClipboard::Mode mode, QlipperItem::ContentType contentType, const ClipboardContent &content)
@@ -155,8 +215,21 @@ void QlipperItem::toClipboard(const Actions & actions) const
     while (it.hasNext())
     {
         it.next();
-        mime->setData(it.key(), it.value());
+        // "x-qlipper/*" keys are this item's own bookkeeping (cache path,
+        // thumbnail, ...) and must never leak onto the real clipboard.
+        if (!it.key().startsWith(QLatin1String("x-qlipper/")))
+            mime->setData(it.key(), it.value());
     }
+
+    if (m_contentType == QlipperItem::Image)
+    {
+        const QString path = QString::fromUtf8(m_content.value(QStringLiteral("x-qlipper/image-path")));
+        const QString format = QString::fromUtf8(m_content.value(QStringLiteral("x-qlipper/image-format"), "image/png"));
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly))
+            mime->setData(format, file.readAll());
+    }
+
     if (actions.testFlag(ToCurrent))
     {
         clipboard->setMimeData(mime, m_mode);
@@ -182,6 +255,8 @@ QString QlipperItem::displayRole() const
         return QObject::tr("Url: %1").arg(m_display).left(QlipperPreferences::Instance()->displaySize());
     case QlipperItem::Binary:
         return QObject::tr("Binary: %1").arg(m_display).left(QlipperPreferences::Instance()->displaySize());
+    case QlipperItem::Image:
+        return QObject::tr("Image (%1)").arg(imageDimensions());
     }
 
     return "";
@@ -189,6 +264,23 @@ QString QlipperItem::displayRole() const
 
 QIcon QlipperItem::decorationRole() const
 {
+    if (m_contentType == QlipperItem::Image)
+    {
+        const QString path = QString::fromUtf8(m_content.value(QStringLiteral("x-qlipper/image-path")));
+        QPixmap pm;
+        if (!path.isEmpty() && QPixmapCache::find(path, &pm))
+            return QIcon(pm);
+
+        const QByteArray thumbnail = m_content.value(QStringLiteral("x-qlipper/thumbnail"));
+        if (!thumbnail.isEmpty() && pm.loadFromData(thumbnail))
+        {
+            if (!path.isEmpty())
+                QPixmapCache::insert(path, pm);
+            return QIcon(pm);
+        }
+        return iconForContentType();
+    }
+
     if (!QlipperPreferences::Instance()->platformExtensions())
     {
         return iconForContentType();
@@ -260,6 +352,9 @@ QString QlipperItem::tooltipRole() const
     case QlipperItem::Sticky:
         t = QObject::tr("Sticky Item (Plain Text)");
         break;
+    case QlipperItem::Image:
+        t = QObject::tr("Image (%1)").arg(imageDimensions());
+        break;
     }
 
     return QString("%1: %2").arg(m).arg(t);
@@ -294,6 +389,9 @@ QIcon QlipperItem::iconForContentType() const
         break;
     case QlipperItem::Sticky:
         theme = "knotes";
+        break;
+    case QlipperItem::Image:
+        theme = "image-x-generic";
         break;
     }
 

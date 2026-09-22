@@ -53,11 +53,20 @@ ClipboardWrap * ClipboardWrap::Instance()
 }
 
 ClipboardWrap::ClipboardWrap()
-    : m_clip(KSystemClipboard::instance())
+    :
+#ifdef HAVE_KSYSTEMCLIPBOARD
+      m_clip(KSystemClipboard::instance())
+#else
+      m_clip(QApplication::clipboard())
+#endif
     , m_shouldEmit(true)
     , m_timer(new QTimer)
 {
+#ifdef HAVE_KSYSTEMCLIPBOARD
     connect(m_clip, &KSystemClipboard::changed, this, &ClipboardWrap::onChanged);
+#else
+    connect(m_clip, &QClipboard::changed, this, &ClipboardWrap::onChanged);
+#endif
     connect(m_timer.data(), &QTimer::timeout, this, &ClipboardWrap::emitChanged);
 
     //Note: the timer is here as a workaround for signal flood for primary selection

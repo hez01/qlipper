@@ -1,0 +1,31 @@
+qlipper (6.1.0-2) unstable; urgency=medium
+
+  * Migrate dynamic-history storage from a QSettings array to SQLite
+    (adds a Qt6 Sql build/runtime dependency). Every insert, move-to-top,
+    trim, and per-entry delete is now a single targeted statement instead
+    of rewriting the whole history to disk, which is what made an
+    unlimited/large history impractical before.
+  * History size limit can now be set to 0 (Unlimited) in preferences.
+  * Delete key in the search menu removes the highlighted entry.
+  * Existing QSettings-stored history is migrated into SQLite
+    automatically on first run, then removed from the settings file.
+  * Removed the now-meaningless "Synchronize history to storage
+    instantly" preference: single-row SQLite writes make that
+    distinction moot.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 06:09:37 +0000
+
+qlipper (6.1.0-1) unstable; urgency=medium
+
+  * Add a live search bar to the clipboard history tray menu, with
+    keyboard navigation (Up/Down/Enter/Escape).
+  * Show copied images in the history again via cached thumbnails.
+    Full-resolution image bytes go to a content-addressed on-disk
+    cache instead of being re-serialized into the settings file on
+    every clipboard change (that repeated full rewrite was the cause
+    of the old freeze with images in history).
+  * Stop recording other, unhandled binary clipboard content.
+  * History size limit can now be set to 0 (Unlimited) in preferences.
+  * Delete key in the search menu removes the highlighted entry.
+
+ -- Local Build <local@localhost>  Tue, 22 Sep 2026 05:59:51 +0000

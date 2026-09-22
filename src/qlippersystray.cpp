@@ -21,7 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <QMessageBox>
 #include <QDebug>
 
-#include "qmenuview.h"
+#include "qlipperhistorymenu.h"
 #include "qlippermodel.h"
 #include "qxtglobalshortcut.h"
 #include "qlipperpreferences.h"
@@ -52,8 +52,7 @@ QlipperSystray::QlipperSystray(QObject *parent)
     setContextMenu(m_contextMenu);
 
 #ifndef NO_QXT
-    m_shortcutMenu = new QMenuView();
-    m_shortcutMenu->setModel(m_model);
+    m_shortcutMenu = new QlipperHistoryMenu(m_model);
     m_shortcutMenu->setWindowTitle(tr("Qlipper - a clipboard history applet"));
 
     // Windows API does not handle well some combinations of flags in custom widgets.

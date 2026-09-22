@@ -55,8 +55,17 @@ option(USE_SYSTEM_QXT "Use system Qxt Library for global shortcuts; off for Qt6"
 
 LIST(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets DBus LinguistTools)
-find_package(KF6GuiAddons REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Widgets DBus LinguistTools Sql)
+# KF6GuiAddons provides KSystemClipboard (Wayland-aware clipboard access).
+# It is optional: when absent (e.g. on Ubuntu 24.04, which ships no KF6),
+# qlipper falls back to QClipboard. See src/clipboardwrap.{h,cpp}.
+find_package(KF6GuiAddons QUIET)
+if (KF6GuiAddons_FOUND)
+    message(STATUS "KF6GuiAddons found: using KSystemClipboard (full Wayland clipboard monitoring)")
+    add_definitions(-DHAVE_KSYSTEMCLIPBOARD)
+else ()
+    message(STATUS "KF6GuiAddons NOT found: falling back to QClipboard (limited clipboard monitoring under Wayland)")
+endif ()
 
 # Qt 6.10: Usage of a private Qt module Foo now requires a call to find_package(Qt6 COMPONENTS FooPrivate) to make the Qt6::FooPrivate target available.
 if (Qt6Gui_VERSION VERSION_GREATER_EQUAL "6.10.0")
@@ -90,21 +99,21 @@ endif (ENABLE_NETWORK_CLIPBOARD_SHARING)
 set (QLIPPER_HEADERS
     qkeysequencewidget/qkeysequencewidget.h
     qkeysequencewidget/qkeysequencewidget_p.h
-    qmenuview/qmenuview.h
-    qmenuview/qmenuview_p.h
     src/qlippermodel.h
+    src/qlipperhistorymenu.h
     src/qlipperpreferencesdialog.h
     src/qlippersystray.h
     src/qlippernetwork.h
     src/clipboardwrap.h
     src/qlipperdbusinterface.h
 )
-set (QLIPPER_SOURCES 
+set (QLIPPER_SOURCES
     qkeysequencewidget/qkeysequencewidget.cpp
-    qmenuview/qmenuview.cpp
     src/main.cpp
     src/qlipperitem.cpp
     src/qlippermodel.cpp
+    src/qlipperhistorymenu.cpp
+    src/qlipperdatabase.cpp
     src/qlipperpreferences.cpp
     src/qlipperpreferencesdialog.cpp
     src/qlippersystray.cpp
@@ -190,7 +199,6 @@ include_directories (
     ${CMAKE_CURRENT_BINARY_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/qkeysequencewidget
     ${CMAKE_CURRENT_SOURCE_DIR}/qxt
-    ${CMAKE_CURRENT_SOURCE_DIR}/qmenuview
 )
 if (NOT QXT_FOUND)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/qxt)
@@ -211,9 +219,13 @@ target_link_libraries( ${EXE_NAME}
     PRIVATE
         Qt6::Widgets
         Qt6::DBus
-        KF6::GuiAddons
+        Qt6::Sql
         Qt6::GuiPrivate
 )
+
+if (KF6GuiAddons_FOUND)
+    target_link_libraries( ${EXE_NAME} PRIVATE KF6::GuiAddons )
+endif ()
 
 if (ENABLE_NETWORK_CLIPBOARD_SHARING)
     target_link_libraries( ${EXE_NAME}

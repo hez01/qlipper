@@ -5,3 +5,23 @@ build*
 *-swp
 *.swp
 CMakeLists.txt.user*
+
+# Build output (debhelper out-of-tree build dir) and packages
+obj-*/
+build/
+*.deb
+*.ddeb
+*.buildinfo
+*.changes
+
+# Stray directory accidentally created by a shell that did not expand ${HOME}
+${HOME}/
+
+# debhelper build artifacts (only the source packaging under debian/ is tracked)
+debian/.debhelper/
+debian/qlipper/
+debian/qlipper-dbgsym/
+debian/files
+debian/debhelper-build-stamp
+debian/*.debhelper.log
+debian/*.substvars

@@ -42,11 +42,21 @@ public:
 
     QList<QlipperItem> getStickyItems();
     void saveStickyItems(QList<QlipperItem> list);
+
+    // Legacy dynamic-history reader, kept only so QlipperDatabase can
+    // one-time-migrate pre-existing history into SQLite. Nothing writes
+    // dynamic items here anymore (see QlipperDatabase).
     QList<QlipperItem> getDynamicItems();
-    void saveDynamicItems(QList<QlipperItem> list);
 
     QString getPathToIcon() const;
     void savePathToIcon(const QString &path);
+
+    // Content-addressed on-disk cache for full-resolution clipboard images.
+    // Keeps large image bytes out of the (frequently re-serialized) history
+    // settings; returns the cached file's path, writing it only if it's not
+    // already there.
+    QString cacheImage(const QByteArray &data, const QString &mimeFormat);
+    void removeCachedImage(const QString &path);
 
     bool trim();
     int displaySize() const;
@@ -55,7 +65,6 @@ public:
     bool platformExtensions() const;
     PSESynchronization synchronizePSE() const;
     bool clearItemsOnExit() const;
-    bool synchronizeHistory() const;
     bool confirmOnClear() const;
 
     bool networkSend() const;

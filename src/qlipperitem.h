@@ -25,6 +25,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <QtDebug>
 #include "qlippertypes.h"
 
+class QImage;
+class QMimeData;
 
 class QlipperItem
 {
@@ -34,7 +36,8 @@ public:
         RichText,
         Binary,
         Url,
-        Sticky
+        Sticky,
+        Image
     };
 
     enum Action
@@ -58,6 +61,11 @@ public:
 
     bool isValid() const { return m_valid; }
 
+    // Row id in QlipperDatabase's dynamic_items table; -1 until the item has
+    // actually been persisted there. Not part of content identity/equality.
+    qint64 dbId() const { return m_dbId; }
+    void setDbId(qint64 id) { m_dbId = id; }
+
     void toClipboard(const Actions & actions) const;
 
     QString displayRole() const;
@@ -70,11 +78,14 @@ private:
     QClipboard::Mode m_mode;
     ContentType m_contentType;
     bool m_valid;
+    qint64 m_dbId = -1;
 
     ClipboardContent m_content;
     QString m_display;
 
     QIcon iconForContentType() const;
+    bool setImageContent(const QImage &image, const QMimeData *mimeData);
+    QString imageDimensions() const;
 };
 
 Q_DECLARE_METATYPE(QlipperItem::ContentType)

@@ -20,8 +20,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef CLIPBOARDWRAP_H
 #define CLIPBOARDWRAP_H
 
-#include <ksystemclipboard.h>
+#include <QClipboard>
 #include <QScopedPointer>
+#ifdef HAVE_KSYSTEMCLIPBOARD
+#include <ksystemclipboard.h>
+#endif
 
 class QTimer;
 
@@ -51,7 +54,11 @@ private:
 
     static QScopedPointer<ClipboardWrap> m_instance;
 
+#ifdef HAVE_KSYSTEMCLIPBOARD
     KSystemClipboard * m_clip;
+#else
+    QClipboard * m_clip;
+#endif
     bool m_shouldEmit;
     QClipboard::Mode m_change;
     QScopedPointer<QTimer> m_timer;

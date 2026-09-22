@@ -47,6 +47,7 @@ protected:
     int rowCount(const QModelIndex&) const;
     QVariant data(const QModelIndex&, int) const;
     Qt::ItemFlags flags(const QModelIndex & index) const;
+    bool removeRows(int row, int count, const QModelIndex &parent);
 
 private:
     QList<QlipperItem> m_sticky;

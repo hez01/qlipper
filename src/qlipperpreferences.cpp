@@ -17,6 +17,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
+
 #include "qlipperpreferences.h"
 
 const QString QlipperPreferences::DEFAULT_ICON_PATH = QStringLiteral(":/icons/qlipper.png");
@@ -142,30 +147,6 @@ QList<QlipperItem> QlipperPreferences::getDynamicItems()
     return l;
 }
 
-void QlipperPreferences::saveDynamicItems(QList<QlipperItem> list)
-{
-    bool clearOnExit = clearItemsOnExit();
-
-    beginGroup("dynamic");
-    int i = 0;
-    remove("items");
-    if (!clearOnExit)
-    {
-        beginWriteArray("items");
-        foreach (QlipperItem item, list)
-        {
-            setArrayIndex(i);
-            i++;
-            setValue("mode", item.clipBoardMode());
-            setValue("contentType", item.contentType());
-            setValue("content", QVariant::fromValue(item.content()));
-        }
-        endArray();
-    }
-    endGroup();
-    sync();
-}
-
 QString QlipperPreferences::getPathToIcon() const
 {
     return value(QLatin1String("tray_icon_file"), DEFAULT_ICON_PATH).toString();
@@ -175,6 +156,35 @@ void QlipperPreferences::savePathToIcon(const QString &path)
 {
     setValue(QLatin1String("tray_icon_file"), path);
     sync();
+}
+
+QString QlipperPreferences::cacheImage(const QByteArray &data, const QString &mimeFormat)
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/images");
+    if (!QDir().mkpath(dir))
+        return QString();
+
+    QString suffix = mimeFormat.section(QLatin1Char('/'), 1);
+    suffix.replace(QLatin1Char('+'), QLatin1Char('-'));
+    if (suffix.isEmpty())
+        suffix = QStringLiteral("png");
+
+    const QString hash = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha1).toHex());
+    const QString path = QStringLiteral("%1/%2.%3").arg(dir, hash, suffix);
+
+    if (!QFile::exists(path))
+    {
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size())
+            return QString();
+    }
+    return path;
+}
+
+void QlipperPreferences::removeCachedImage(const QString &path)
+{
+    if (!path.isEmpty())
+        QFile::remove(path);
 }
 
 bool QlipperPreferences::trim()
@@ -210,11 +220,6 @@ QlipperPreferences::PSESynchronization QlipperPreferences::synchronizePSE() cons
 bool QlipperPreferences::clearItemsOnExit() const
 {
     return value("clearItemsOnExit", false).toBool();
-}
-
-bool QlipperPreferences::synchronizeHistory() const
-{
-    return value("synchronizeHistory", true).toBool();
 }
 
 bool QlipperPreferences::confirmOnClear() const

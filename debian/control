@@ -1,0 +1,28 @@
+Source: qlipper
+Section: utils
+Priority: optional
+Maintainer: Local Build <local@localhost>
+Build-Depends: debhelper-compat (= 13),
+               cmake,
+               g++,
+               qt6-base-dev,
+               qt6-base-private-dev,
+               qt6-l10n-tools,
+               qt6-tools-dev,
+               libx11-dev,
+               desktop-file-utils
+Standards-Version: 4.6.2
+Homepage: https://github.com/pvanek/qlipper
+Rules-Requires-Root: no
+
+Package: qlipper
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libqt6sql6-sqlite
+Description: Lightweight, cross-platform clipboard history applet
+ Qlipper keeps track of what you copy and lets you pick a previous
+ entry from a searchable, live-filtered system tray menu.
+ .
+ This build adds copied-image thumbnails backed by a content-addressed
+ on-disk cache, SQLite-backed history storage (single-row writes instead
+ of rewriting the whole history on every change), an unlimited-history
+ option, and per-entry deletion with the Delete key.

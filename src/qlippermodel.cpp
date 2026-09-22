@@ -24,8 +24,23 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "qlippermodel.h"
 #include "qlipperpreferences.h"
+#include "qlipperdatabase.h"
 #include "qlippernetwork.h"
 #include "clipboardwrap.h"
+
+namespace
+{
+    // Dynamic-history images are cached on disk (see QlipperItem::setImageContent);
+    // drop the cache file whenever an item actually leaves the history, so the
+    // cache doesn't grow without bound.
+    void purgeImageCache(const QlipperItem &item)
+    {
+        if (item.contentType() != QlipperItem::Image)
+            return;
+        const QString path = QString::fromUtf8(item.content().value(QStringLiteral("x-qlipper/image-path")));
+        QlipperPreferences::Instance()->removeCachedImage(path);
+    }
+}
 
 
 QlipperModel::QlipperModel(QObject *parent) :
@@ -36,7 +51,7 @@ QlipperModel::QlipperModel(QObject *parent) :
     m_boldFont.setBold(true);
 
     m_sticky = QlipperPreferences::Instance()->getStickyItems();
-    m_dynamic = QlipperPreferences::Instance()->getDynamicItems();
+    m_dynamic = QlipperDatabase::Instance()->loadDynamicItems();
     // a little hack-a-magic to have almost
     if (m_sticky.count() + m_dynamic.count() == 0)
     {
@@ -58,8 +73,15 @@ QlipperModel::QlipperModel(QObject *parent) :
 
 QlipperModel::~QlipperModel()
 {
-    QlipperPreferences::Instance()->saveDynamicItems(m_dynamic);
+    // Dynamic items are already persisted incrementally as they change; only
+    // sticky items still need an explicit save here.
     QlipperPreferences::Instance()->saveStickyItems(m_sticky);
+    if (QlipperPreferences::Instance()->clearItemsOnExit())
+    {
+        QlipperDatabase::Instance()->clearDynamicItems();
+        for (const QlipperItem &item : m_dynamic)
+            purgeImageCache(item);
+    }
     m_dynamic.clear();
     m_sticky.clear();
 }
@@ -124,6 +146,45 @@ Qt::ItemFlags QlipperModel::flags(const QModelIndex & index) const
     return Qt::ItemIsEditable | Qt::ItemIsEnabled;
 }
 
+bool QlipperModel::removeRows(int row, int count, const QModelIndex &parent)
+{
+    if (parent.isValid() || count <= 0)
+        return false;
+
+    const int total = m_sticky.count() + m_dynamic.count();
+    if (row < 0 || row + count > total)
+        return false;
+
+    beginRemoveRows(QModelIndex(), row, row + count - 1);
+
+    // Remove from the back of the range forward so earlier indices in the
+    // same batch stay valid.
+    bool stickyChanged = false;
+    for (int r = row + count - 1; r >= row; --r)
+    {
+        if (r < m_sticky.count())
+        {
+            m_sticky.removeAt(r);
+            stickyChanged = true;
+        }
+        else
+        {
+            const int dynIx = r - m_sticky.count();
+            const QlipperItem &item = m_dynamic.at(dynIx);
+            purgeImageCache(item);
+            QlipperDatabase::Instance()->removeDynamicItem(item);
+            m_dynamic.removeAt(dynIx);
+        }
+    }
+
+    endRemoveRows();
+
+    if (stickyChanged)
+        QlipperPreferences::Instance()->saveStickyItems(m_sticky);
+
+    return true;
+}
+
 void QlipperModel::clipboard_changed(QClipboard::Mode mode)
 {
     if ((mode == QClipboard::Selection || mode == QClipboard::FindBuffer)
@@ -133,6 +194,13 @@ void QlipperModel::clipboard_changed(QClipboard::Mode mode)
     }
 
     QlipperItem item(mode);
+    if (item.isValid() && item.contentType() == QlipperItem::Binary)
+    {
+        // Unhandled binary content (anything that isn't text/html/url/image)
+        // is never kept in history; leave the clipboard's own content
+        // untouched and just skip recording it.
+        return;
+    }
     if (!item.isValid())
     {
         // See QlipperItem constructor: On X11 clipboard content is owned by the
@@ -170,12 +238,18 @@ void QlipperModel::clipboard_changed(QClipboard::Mode mode)
         beginInsertRows(QModelIndex(), sticky_count, sticky_count);
         m_dynamic.prepend(item);
         endInsertRows();
+        QlipperDatabase::Instance()->insertDynamicItem(m_dynamic[0]);
+
         const int max_history = QlipperPreferences::Instance()->historyCount();
-        if (m_dynamic.count() > max_history)
+        // A max of 0 (or less) means unlimited: never trim.
+        if (max_history > 0 && m_dynamic.count() > max_history)
         {
             beginRemoveRows(QModelIndex(), sticky_count + max_history - 1, sticky_count + m_dynamic.count() - 1);
+            for (auto it = m_dynamic.begin() + (max_history - 1); it != m_dynamic.end(); ++it)
+                purgeImageCache(*it);
             m_dynamic.erase(m_dynamic.begin() + (max_history - 1), m_dynamic.end());
             endRemoveRows();
+            QlipperDatabase::Instance()->trimDynamicItems(max_history);
         }
         ix = 0;
     }
@@ -191,15 +265,11 @@ void QlipperModel::setCurrentDynamic(int ix)
         beginMoveRows(QModelIndex(), sticky_count + ix, sticky_count + ix, QModelIndex(), sticky_count);
         m_dynamic.move(ix, 0);
         endMoveRows();
+        QlipperDatabase::Instance()->touchDynamicItem(m_dynamic.at(0));
     }
 
     m_currentIndex = index(m_sticky.count());
     m_network->sendData(m_dynamic.at(0).content());
-
-    if (QlipperPreferences::Instance()->synchronizeHistory())
-    {
-        QlipperPreferences::Instance()->saveDynamicItems(m_dynamic);
-    }
 }
 
 
@@ -207,14 +277,19 @@ void QlipperModel::clearHistory()
 {
     const int sticky_count = m_sticky.count();
     beginRemoveRows(QModelIndex(), sticky_count, sticky_count + m_dynamic.count() - 1);
+    for (const QlipperItem &item : m_dynamic)
+        purgeImageCache(item);
     m_dynamic.clear();
     endRemoveRows();
+    QlipperDatabase::Instance()->clearDynamicItems();
+
     ClipboardContent tmp;
     tmp["text/plain"] = tr("Welcome to the Qlipper clipboard history applet").toUtf8();
     QlipperItem item(QClipboard::Clipboard, QlipperItem::PlainText, tmp);
     beginInsertRows(QModelIndex(), sticky_count, sticky_count);
     m_dynamic.append(item);
     endInsertRows();
+    QlipperDatabase::Instance()->insertDynamicItem(m_dynamic[0]);
     m_currentIndex = index(sticky_count);
 }
 
