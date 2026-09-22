@@ -61,6 +61,13 @@ QlipperHistoryMenu::QlipperHistoryMenu(QlipperModel *model, QWidget *parent)
     m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_list->setFrameShape(QFrame::NoFrame);
+    // Highlight the entry under the mouse cursor, like a normal menu.
+    m_list->setMouseTracking(true);
+    m_list->viewport()->setMouseTracking(true);
+    connect(m_list, &QListWidget::itemEntered, this, [this](QListWidgetItem *it) {
+        if (it && (it->flags() & Qt::ItemIsEnabled))
+            m_list->setCurrentItem(it);
+    });
     // A single click on an entry activates it, like a menu item.
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *) { activateCurrent(); });
 
